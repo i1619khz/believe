@@ -4,7 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.believe.security.AuthorizationConstants;
 import org.believe.security.SecurityRsaAlgorithm;
-import org.believe.toolkit.JwtTokenDetector;
+import org.believe.security.jwt.TokenProvider;
+import org.believe.toolkit.ClockConverter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
@@ -26,14 +27,16 @@ import java.nio.file.Paths;
 import java.security.PrivateKey;
 import java.time.LocalDate;
 import java.util.Date;
-import java.util.HashMap;
 
 @Slf4j
 @Component
 public class AuthService {
 
   @Autowired
-  private JwtTokenDetector jwtTokenUtils;
+  private TokenProvider tokenProvider;
+
+  @Autowired
+  private ClockConverter clockConverter;
 
   @Autowired
   private AuthRepository authRepository;
@@ -47,19 +50,15 @@ public class AuthService {
   /**
    * 效验凭证
    *
-   * @param userName
-   * @param password
+   * @param userName 账户名
+   * @param password 密码
    */
   public String loginAndGenerateToken(String userName, String password) {
     Assert.notNull(userName, "userName can not be null");
     Assert.notNull(password, "password can not be null");
-    final String decodePassword = decodeRasPwdToPlainText(password);
-    final String token = generationJwtStr(userName);
-    UsernamePasswordAuthenticationToken upToken =
-            new UsernamePasswordAuthenticationToken(userName, decodePassword);
-    final Authentication authentication = authenticationManager.authenticate(upToken);
+    final Authentication authentication = getAuthentication(userName, password);
     SecurityContextHolder.getContext().setAuthentication(authentication);
-    return token;
+    return generationJwtStr(authentication);
   }
 
   /**
@@ -84,28 +83,39 @@ public class AuthService {
   /**
    * 刷新token
    *
-   * @param userName
+   * @param userName 账户名
    * @return
    */
-  public String generateRefreshToken(String userName) {
-    return this.generationJwtStr(userName);
+  public String generateRefreshToken(String userName, String password) {
+    final Authentication authentication = getAuthentication(userName, password);
+    return this.generationJwtStr(authentication);
+  }
+
+  /**
+   * 根据账号密码返回Authentication对象
+   */
+  private Authentication getAuthentication(String userName, String password) {
+    final String decodePassword = decodeRasPwdToPlainText(password);
+    UsernamePasswordAuthenticationToken upToken =
+            new UsernamePasswordAuthenticationToken(userName, decodePassword);
+    return authenticationManager.authenticate(upToken);
   }
 
   /**
    * 生成jwt字符串，过期时间默认为20天
    *
-   * @param userName
-   * @return
+   * @param authentication 授权对象
+   * @return 加密token字符串
    */
-  private String generationJwtStr(String userName) {
+  private String generationJwtStr(Authentication authentication) {
     LocalDate expireDate = LocalDate.now().plusDays(20);
-    return jwtTokenUtils.generationJwt(userName, expireDate, false);
+    return tokenProvider.createToken(authentication, clockConverter.localDateToDate(expireDate));
   }
 
   /**
    * 注册系统接口用户
    *
-   * @return
+   * @return 注册结果
    */
   @Transactional
   public boolean registerAuthorizePrimary(final AuthPrimary authPrimary) {
@@ -122,15 +132,15 @@ public class AuthService {
   /**
    * 获取用户信息
    *
-   * @param userName
-   * @param code
-   * @return
+   * @param userName 账户名
+   * @param code     唯一识别码
+   * @return 用户实体信息
    */
   public AuthPrimary getAuthorizePrimaryInfo(String userName, String code) {
     final AuthPrimary authPrimary = authRepository.selectOne(
-            new QueryWrapper<AuthPrimary>().allEq(new HashMap<>(){{
-              put("userName", userName);put("code", code);
-            }}));
+            new QueryWrapper<AuthPrimary>()
+                    .eq("userName", userName)
+                    .eq("code", code));
     Assert.notNull(authPrimary, "controller user info can't get");
     return authPrimary;
   }

@@ -49,9 +49,9 @@ public class AuthController {
    * 刷新token
    */
   @GetMapping(value = "/refresh", headers = "version=auth/1.0")
-  public BusinessResponse refresh(@RequestParam final String userName) {
+  public BusinessResponse refresh(@RequestParam final String userName, @RequestParam final String password) {
     Assert.notNull(userName, "userName can't be null");
-    String refreshToken = authService.generateRefreshToken(userName);
+    String refreshToken = authService.generateRefreshToken(userName,password);
     return BusinessResponse.successResult("generate token success", refreshToken);
   }
 
