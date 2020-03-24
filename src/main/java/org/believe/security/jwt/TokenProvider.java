@@ -1,11 +1,17 @@
-package org.believe.toolkit;
+package org.believe.security.jwt;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Header;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import org.believe.security.AuthorizationConstants;
+import org.believe.toolkit.ClockConverter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
 import org.springframework.util.Base64Utils;
@@ -14,19 +20,20 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * @author WangYi
  * @since 2019/6/20
  */
 @Component
-public class JwtTokenDetector {
+public class TokenProvider {
 
 	@Autowired
 	private ClockConverter clockConverter;
 
+  private static final String AUTHORITIES_KEY = "auth";
 	private final SecretKey key = generalKey();
 
 	/**
@@ -47,6 +54,19 @@ public class JwtTokenDetector {
 				.signWith(SignatureAlgorithm.HS256, key).compact();
 		return encode ? Base64Utils.encodeToString(token.getBytes(StandardCharsets.UTF_8)) : token;
 	}
+
+  public String createToken(Authentication authentication,Date expiration) {
+    String authorities = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .collect(Collectors.joining(","));
+
+    return Jwts.builder()
+            .setSubject(authentication.getName())
+            .claim(AUTHORITIES_KEY, authorities)
+            .signWith(SignatureAlgorithm.HS256, key)
+            .setExpiration(expiration)
+            .compact();
+  }
 
 	/**
 	 * 解密jwt
@@ -115,6 +135,19 @@ public class JwtTokenDetector {
 	public String getUsernameFromToken(String authToken) {
 		Claims claims = this.parseJwt(authToken);
 		return claims.get("userName", String.class);
+	}
+
+	public Authentication getAuthentication(String token) {
+		Claims claims = this.parseJwt(token);
+
+		Collection<? extends GrantedAuthority> authorities =
+						Arrays.stream(claims.get(AUTHORITIES_KEY).toString().split(","))
+										.map(SimpleGrantedAuthority::new)
+										.collect(Collectors.toList());
+
+		User principal = new User(claims.getSubject(), "", authorities);
+
+		return new UsernamePasswordAuthenticationToken(principal, token, authorities);
 	}
 
 	/**
