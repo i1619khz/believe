@@ -8,6 +8,7 @@ package org.believe.security;
 public interface AuthorizationConstants {
   String ROLE_USER = "ROLE_USER";
   String ROLE_ADMIN = "ROLE_ADMIN";
+  String ANONYMOUS = "ROLE_ANONYMOUS";
   String ROLE_SUPER_ADMIN = "ROLE_SUPER_ADMIN";
 
   String TOKEN_HEADER = "Authorization";
